@@ -38,6 +38,17 @@ function launchGame({ authorization, gameDir, javaPath, manifest, ramMin, ramMax
     launcher.launch(opts).then(child => {
       active = child;
       onLog?.('[Launcher] Minecraft process started.');
+      try {
+        if (child?.stdout) {
+          child.stdout.on('data', d => onLog?.(`[jvm:out] ${String(d).trimEnd()}`));
+        }
+        if (child?.stderr) {
+          child.stderr.on('data', d => onLog?.(`[jvm:err] ${String(d).trimEnd()}`));
+        }
+        child?.on?.('error', e => onLog?.(`[jvm:spawn-error] ${e.message}`));
+      } catch (e) {
+        onLog?.(`[Launcher] Could not attach stdio listeners: ${e.message}`);
+      }
     }).catch(err => {
       onLog?.(`[Launcher] Launch error: ${err.message}`);
       reject(err);

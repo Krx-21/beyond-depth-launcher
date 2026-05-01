@@ -180,7 +180,8 @@ ipcMain.handle('launch:start', async (_, opts) => {
       javaPath,
       forgeInstaller,
       manifest,
-      ramMin: store.get('ramMinGB') || 2,
+      // Force min == max (single RAM value)
+      ramMin: store.get('ramMaxGB') || 6,
       ramMax: store.get('ramMaxGB') || 6,
       serverAddress: opts.directConnect ? store.get('serverAddress') : null,
       onLog: (msg) => sendStatus('launch:log', msg),

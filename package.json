@@ -1,6 +1,6 @@
 {
   "name": "beyond-depth-launcher",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Beyond Depth — Minecraft modpack launcher (offline, auto-update, Forge 1.20.1)",
   "main": "src/main/index.js",
   "author": "Beyond Depth",
