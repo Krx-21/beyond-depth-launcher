@@ -1,5 +1,58 @@
 // Wrap minecraft-launcher-core for our needs
+const fs = require('fs');
+const path = require('path');
 const { Client } = require('minecraft-launcher-core');
+const Handler = require('minecraft-launcher-core/components/handler');
+
+// One-time monkey patch: filter module-path jars out of MCLC's classpath.
+// MCLC 3.18 doesn't honour the `arguments.jvm` block from custom Forge JSON
+// (which is required for Forge 1.17+ on Java 17+). We inject those args
+// via customArgs, but the same jars MUST NOT remain on -cp or Java errors
+// with "package conflicts with package in unnamed module".
+if (!Handler.prototype._cleanUp_patched) {
+  const origCleanUp = Handler.prototype.cleanUp;
+  Handler.prototype.cleanUp = function (array) {
+    const cleaned = origCleanUp.call(this, array);
+    const mp = this.options?._modulePathJarPaths;
+    if (!Array.isArray(mp) || mp.length === 0) return cleaned;
+    const norm = p => path.resolve(String(p)).toLowerCase();
+    const drop = new Set(mp.map(norm));
+    return cleaned.filter(p => typeof p !== 'string' || !drop.has(norm(p)));
+  };
+  Handler.prototype._cleanUp_patched = true;
+}
+
+function expandPlaceholders(str, ctx) {
+  return String(str)
+    .split('${library_directory}').join(ctx.libraryDirectory)
+    .split('${classpath_separator}').join(ctx.classpathSeparator)
+    .split('${version_name}').join(ctx.versionName);
+}
+
+function buildForgeJvmArgs(gameDir, forgeVerName) {
+  const file = path.join(gameDir, 'versions', forgeVerName, `${forgeVerName}.json`);
+  if (!fs.existsSync(file)) return { args: [], modulePathJars: [] };
+  let json;
+  try { json = JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch { return { args: [], modulePathJars: [] }; }
+  const rawJvm = Array.isArray(json?.arguments?.jvm) ? json.arguments.jvm : [];
+  const ctx = {
+    libraryDirectory: path.join(gameDir, 'libraries'),
+    classpathSeparator: ';',
+    versionName: forgeVerName
+  };
+  const args = rawJvm
+    .filter(a => typeof a === 'string')
+    .map(a => expandPlaceholders(a, ctx));
+  let modulePathJars = [];
+  for (let i = 0; i < args.length - 1; i++) {
+    if (args[i] === '-p' || args[i] === '--module-path') {
+      modulePathJars = args[i + 1].split(';').filter(Boolean);
+      break;
+    }
+  }
+  return { args, modulePathJars };
+}
 
 let active = null;
 
@@ -7,6 +60,9 @@ function launchGame({ authorization, gameDir, javaPath, manifest, ramMin, ramMax
   return new Promise((resolve, reject) => {
     const launcher = new Client();
     const forgeVerName = `${manifest.minecraft}-forge-${manifest.forge}`;
+
+    const { args: forgeJvmArgs, modulePathJars } = buildForgeJvmArgs(gameDir, forgeVerName);
+    onLog?.(`[Launcher] Forge JVM args: ${forgeJvmArgs.length} (module-path jars: ${modulePathJars.length})`);
 
     const opts = {
       authorization,
@@ -18,7 +74,10 @@ function launchGame({ authorization, gameDir, javaPath, manifest, ramMin, ramMax
         custom: forgeVerName  // use installed forge version folder
       },
       memory: { max: `${ramMax}G`, min: `${ramMin}G` },
-      window: { width: 1280, height: 720 }
+      window: { width: 1280, height: 720 },
+      customArgs: forgeJvmArgs,
+      // Read by our monkey-patched Handler.prototype.cleanUp
+      _modulePathJarPaths: modulePathJars
     };
 
     if (serverAddress) {
