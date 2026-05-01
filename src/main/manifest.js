@@ -1,8 +1,9 @@
-// Manifest sync: download/update mods, config, etc. based on remote manifest.json
+// Manifest sync: download/update mods, config bundles, etc.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const axios = require('axios');
+const extract = require('extract-zip');
 
 async function fetchManifest(url) {
   const r = await axios.get(url, { timeout: 15000, responseType: 'json' });
@@ -24,7 +25,7 @@ async function downloadFile(url, dest, onChunk) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const tmp = dest + '.tmp';
   const writer = fs.createWriteStream(tmp);
-  const response = await axios.get(url, { responseType: 'stream', timeout: 60000, maxRedirects: 5 });
+  const response = await axios.get(url, { responseType: 'stream', timeout: 120000, maxRedirects: 5 });
   const total = parseInt(response.headers['content-length'] || '0', 10);
   let received = 0;
   response.data.on('data', (chunk) => {
@@ -40,59 +41,88 @@ async function downloadFile(url, dest, onChunk) {
   fs.renameSync(tmp, dest);
 }
 
+function rmrf(p) {
+  if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
+}
+
 /**
- * manifest format:
+ * manifest format v2:
  * {
- *   "version": "1.0.5",
+ *   "version": "1.0.0",
  *   "minecraft": "1.20.1",
  *   "forge": "47.4.20",
  *   "javaVersion": 21,
- *   "forgeInstaller": { "url": "...", "sha1": "...", "size": ... },
- *   "files": [ { "path": "mods/x.jar", "url": "...", "sha1": "...", "size": ... } ],
+ *   "forgeInstaller": { "url", "sha1", "size" },
+ *   "mods":    [ { "path": "mods/x.jar", "url", "sha1", "size" } ],
+ *   "bundles": [ { "path": "config",     "url", "sha1", "size" } ],
  *   "removed": [ "mods/old.jar" ]
  * }
+ * Bundles = zip of a whole dir. On sha1 mismatch, wipe + extract.
  */
 async function syncManifest({ manifestUrl, gameDir, forgeDir, onProgress, onLog, dryRun = false }) {
   onLog?.(`Fetching manifest: ${manifestUrl}`);
   const manifest = await fetchManifest(manifestUrl);
-  onLog?.(`Manifest version ${manifest.version} — ${manifest.files?.length || 0} files`);
 
-  const tasks = [];
-  for (const f of (manifest.files || [])) {
+  const modsTasks = [];
+  for (const f of (manifest.mods || manifest.files || [])) {
     const dest = path.join(gameDir, f.path);
     const local = await sha1File(dest);
-    if (local !== f.sha1) tasks.push({ ...f, dest });
+    if (local !== f.sha1) modsTasks.push({ kind: 'file', ...f, dest });
   }
 
-  // Removals
+  const stateFile = path.join(gameDir, '.bd-bundles.json');
+  let state = {};
+  try { if (fs.existsSync(stateFile)) state = JSON.parse(fs.readFileSync(stateFile, 'utf8')); } catch {}
+  const bundleTasks = [];
+  for (const b of (manifest.bundles || [])) {
+    if (state[b.path] !== b.sha1) bundleTasks.push({ kind: 'bundle', ...b });
+  }
+
+  const total = modsTasks.length + bundleTasks.length;
+  onLog?.(`Manifest v${manifest.version}: ${modsTasks.length} mods + ${bundleTasks.length} bundles to update`);
+
   for (const rel of (manifest.removed || [])) {
     const p = path.join(gameDir, rel);
     if (fs.existsSync(p) && !dryRun) {
-      fs.rmSync(p, { force: true });
+      rmrf(p);
       onLog?.(`Removed: ${rel}`);
     }
   }
 
-  if (dryRun) {
-    return { ...manifest, _pending: tasks.length };
-  }
+  if (dryRun) return { ...manifest, _pending: total };
 
   let done = 0;
-  for (const t of tasks) {
-    onLog?.(`Downloading ${t.path}`);
-    await downloadFile(t.url, t.dest, (rec, total) => {
-      onProgress?.({
-        file: t.path,
-        index: done + 1,
-        total: tasks.length,
-        bytes: rec,
-        bytesTotal: total
-      });
+  const cacheDir = path.join(gameDir, '.bd-cache');
+  fs.mkdirSync(cacheDir, { recursive: true });
+
+  for (const t of modsTasks) {
+    onLog?.(`Mod: ${t.path}`);
+    await downloadFile(t.url, t.dest, (rec, sz) => {
+      onProgress?.({ file: t.path, index: done + 1, total, bytes: rec, bytesTotal: sz });
     });
     done++;
-    onProgress?.({ file: t.path, index: done, total: tasks.length, bytes: 0, bytesTotal: 0, finished: true });
+    onProgress?.({ file: t.path, index: done, total, finished: true });
   }
-  onLog?.(`Sync complete (${done} files updated)`);
+
+  for (const b of bundleTasks) {
+    const zipPath = path.join(cacheDir, `${b.path.replace(/[\\/]/g, '_')}.zip`);
+    onLog?.(`Bundle: ${b.path} (downloading)`);
+    await downloadFile(b.url, zipPath, (rec, sz) => {
+      onProgress?.({ file: `${b.path}.zip`, index: done + 1, total, bytes: rec, bytesTotal: sz });
+    });
+    const dir = path.join(gameDir, b.path);
+    onLog?.(`Bundle: ${b.path} (extracting)`);
+    rmrf(dir);
+    fs.mkdirSync(dir, { recursive: true });
+    await extract(zipPath, { dir });
+    fs.rmSync(zipPath, { force: true });
+    state[b.path] = b.sha1;
+    fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+    done++;
+    onProgress?.({ file: b.path, index: done, total, finished: true });
+  }
+
+  onLog?.(`Sync complete: ${done}/${total}`);
   return manifest;
 }
 

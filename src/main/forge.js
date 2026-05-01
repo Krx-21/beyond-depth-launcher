@@ -34,6 +34,12 @@ async function ensureForge({ forgeDir, manifest, javaPath, gameDir, onLog }) {
   }
 
   onLog?.(`Installing Forge ${manifest.forge} (this takes a while)...`);
+  // Forge installer requires a launcher_profiles.json in the game dir
+  const lpPath = path.join(gameDir, 'launcher_profiles.json');
+  if (!fs.existsSync(lpPath)) {
+    fs.mkdirSync(gameDir, { recursive: true });
+    fs.writeFileSync(lpPath, JSON.stringify({ profiles: {}, settings: {}, version: 3 }, null, 2));
+  }
   // Forge installer headless with --installClient <gameDir>
   await runJava(javaPath, ['-jar', installerPath, '--installClient', gameDir], forgeDir, onLog);
   onLog?.(`Forge installed.`);

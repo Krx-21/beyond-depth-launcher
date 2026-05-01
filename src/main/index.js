@@ -5,6 +5,7 @@ const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 
 const Store = require('electron-store');
+const CORRECT_MANIFEST_URL = 'https://github.com/Krx-21/beyond-depth-launcher/releases/latest/download/manifest.json';
 const store = new Store({
   defaults: {
     profiles: [],          // [{name, skinPath}]
@@ -12,11 +13,19 @@ const store = new Store({
     ramMaxGB: 6,
     ramMinGB: 2,
     serverAddress: '58.136.198.119:25565',
-    manifestUrl: 'https://github.com/Krx-21/beyond-depth-launcher/releases/latest/download/manifest.json',
+    manifestUrl: CORRECT_MANIFEST_URL,
     javaPath: null,
     gameDir: null
   }
 });
+
+// Migration: fix any previously saved bad manifest URL (e.g. typos like Kr.x.21)
+{
+  const cur = store.get('manifestUrl') || '';
+  if (!/github\.com\/Krx-21\/beyond-depth-launcher\//.test(cur)) {
+    store.set('manifestUrl', CORRECT_MANIFEST_URL);
+  }
+}
 
 const isDev = process.argv.includes('--dev');
 let mainWindow;

@@ -123,17 +123,23 @@ $('#btn-add-profile').onclick = async () => {
 
 // Settings
 async function loadSettings() {
-  $('#ram-max').value      = await api.getStore('ramMaxGB') || 6;
-  $('#ram-min').value      = await api.getStore('ramMinGB') || 2;
+  const ram = parseInt(await api.getStore('ramMaxGB'), 10) || 6;
+  $('#ram-slider').value = ram;
+  $('#ram-input').value = ram;
   $('#server-address').value = await api.getStore('serverAddress') || '';
-  $('#manifest-url').value = await api.getStore('manifestUrl') || '';
-  $('#ram-max-val').textContent = $('#ram-max').value;
-  $('#ram-min-val').textContent = $('#ram-min').value;
 }
-$('#ram-max').oninput = (e) => { $('#ram-max-val').textContent = e.target.value; api.setStore('ramMaxGB', parseInt(e.target.value, 10)); };
-$('#ram-min').oninput = (e) => { $('#ram-min-val').textContent = e.target.value; api.setStore('ramMinGB', parseInt(e.target.value, 10)); };
+function setRam(v) {
+  let n = parseInt(v, 10);
+  if (!Number.isFinite(n)) n = 6;
+  n = Math.max(2, Math.min(64, n));
+  $('#ram-slider').value = n;
+  $('#ram-input').value = n;
+  api.setStore('ramMaxGB', n);
+  api.setStore('ramMinGB', n);
+}
+$('#ram-slider').oninput = (e) => setRam(e.target.value);
+$('#ram-input').onchange = (e) => setRam(e.target.value);
 $('#server-address').onchange = (e) => api.setStore('serverAddress', e.target.value);
-$('#manifest-url').onchange = (e) => api.setStore('manifestUrl', e.target.value);
 
 $('#btn-open-game').onclick = () => api.openGameDir();
 $('#btn-open-launcher').onclick = () => api.openLauncherDir();
