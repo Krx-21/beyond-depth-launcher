@@ -212,12 +212,16 @@ $('#btn-stop').onclick = async () => {
 };
 $('#btn-clear-console').onclick = () => { consoleEl.textContent = ''; };
 
-// News
+// News (cached per session to avoid refetching on every tab click)
+let _newsHtmlCache = null;
 async function loadNews() {
+  if (_newsHtmlCache !== null) {
+    $('#news-content').innerHTML = _newsHtmlCache;
+    return;
+  }
   const md = await api.fetchNews();
-  $('#news-content').innerHTML = md
-    ? renderMarkdown(md)
-    : '<p class="muted">No news available.</p>';
+  _newsHtmlCache = md ? renderMarkdown(md) : '<p class="muted">No news available.</p>';
+  $('#news-content').innerHTML = _newsHtmlCache;
 }
 
 function renderMarkdown(md) {

@@ -99,11 +99,15 @@ function main() {
   console.log(`Mods: ${mods.length} (sources: ${modSources.length})`);
 
   // ---- BUNDLES (zip whole dir) ----
-  const bundleDirs = ['config', 'kubejs', 'defaultconfigs', 'resourcepacks', 'shaderpacks'];
+  // Each entry: check clientDir first (client overrides server), then serverDir
+  const bundleDirs = ['config', 'kubejs', 'defaultconfigs', 'resourcepacks', 'shaderpacks', 'CustomSkinLoader'];
   const bundles = [];
   const bundleUploads = [];
   for (const sub of bundleDirs) {
-    const srcDir = path.join(serverDir, sub);
+    // Client dir takes priority (allows client-only bundles like CustomSkinLoader config)
+    let srcDir = clientDir && fs.existsSync(path.join(clientDir, sub))
+      ? path.join(clientDir, sub)
+      : path.join(serverDir, sub);
     if (!fs.existsSync(srcDir)) continue;
     const zipName = `bundle-${sub}.zip`;
     const zipPath = path.join(distDir, zipName);

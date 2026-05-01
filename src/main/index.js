@@ -92,7 +92,12 @@ ipcMain.on('window:minimize', () => mainWindow.minimize());
 ipcMain.on('window:close',    () => mainWindow.close());
 ipcMain.on('window:openExternal', (_, url) => shell.openExternal(url));
 
-const { syncManifest, downloadFile, sha1File } = require('./manifest');
+const { syncManifest } = require('./manifest');
+
+// In-session manifest cache — avoids re-fetching + re-SHA1-checking on every launch
+let _manifestCache = null;
+let _manifestCacheTime = 0;
+const MANIFEST_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const { ensureJava } = require('./java');
 const { ensureForge } = require('./forge');
 const { launchGame, stopGame } = require('./launcher');
@@ -113,7 +118,7 @@ ipcMain.handle('manifest:check', async () => {
 
 ipcMain.handle('manifest:apply', async () => {
   const url = store.get('manifestUrl');
-  return await syncManifest({
+  const result = await syncManifest({
     manifestUrl: url,
     gameDir: store.get('gameDir'),
     forgeDir: FORGE_DIR,
@@ -121,6 +126,9 @@ ipcMain.handle('manifest:apply', async () => {
     onLog: (msg) => sendStatus('sync:log', msg),
     dryRun: false
   });
+  _manifestCache = result;
+  _manifestCacheTime = Date.now();
+  return result;
 });
 
 // ---- Launch ----
@@ -130,14 +138,22 @@ ipcMain.handle('launch:start', async (_, opts) => {
     const profile = (store.get('profiles') || []).find(p => p.name === opts.profileName);
     if (!profile) throw new Error('Profile not found');
 
-    const manifest = await syncManifest({
-      manifestUrl: store.get('manifestUrl'),
-      gameDir: store.get('gameDir'),
-      forgeDir: FORGE_DIR,
-      onProgress: (p) => sendStatus('sync:progress', p),
-      onLog: (msg) => sendStatus('sync:log', msg),
-      dryRun: false
-    });
+    let manifest;
+    if (_manifestCache && (Date.now() - _manifestCacheTime) < MANIFEST_CACHE_TTL) {
+      manifest = _manifestCache;
+      sendStatus('launch:log', `[Launcher] Manifest v${manifest.version} (cached, skipping re-sync)`);
+    } else {
+      manifest = await syncManifest({
+        manifestUrl: store.get('manifestUrl'),
+        gameDir: store.get('gameDir'),
+        forgeDir: FORGE_DIR,
+        onProgress: (p) => sendStatus('sync:progress', p),
+        onLog: (msg) => sendStatus('sync:log', msg),
+        dryRun: false
+      });
+      _manifestCache = manifest;
+      _manifestCacheTime = Date.now();
+    }
 
     sendStatus('launch:log', '[Launcher] Ensuring Java...');
     const javaPath = await ensureJava({
