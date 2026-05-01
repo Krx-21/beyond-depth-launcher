@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Beyond Depth Launcher</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="titlebar">
+  <div class="title">⛏ Beyond Depth Launcher</div>
+  <div class="title-buttons">
+    <button id="btn-min" title="Minimize">―</button>
+    <button id="btn-close" class="close" title="Close">✕</button>
+  </div>
+</div>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo">Beyond<br><span>Depth</span></div>
+    <nav>
+      <button class="nav active" data-tab="play">▶ Play</button>
+      <button class="nav" data-tab="profiles">👤 Profiles</button>
+      <button class="nav" data-tab="settings">⚙ Settings</button>
+      <button class="nav" data-tab="news">📰 News</button>
+    </nav>
+    <div class="version" id="app-version">v0.1.0</div>
+  </aside>
+
+  <main class="content">
+    <!-- PLAY -->
+    <section class="tab active" id="tab-play">
+      <div class="hero">
+        <div class="hero-bg"></div>
+        <div class="hero-inner">
+          <h1>Beyond Depth</h1>
+          <p>Forge 1.20.1 modpack — adventure, magic, exploration.</p>
+          <div class="play-row">
+            <select id="profile-select"></select>
+            <label class="check"><input type="checkbox" id="direct-connect" checked> Auto-join server</label>
+            <button id="btn-play" class="btn-play">▶ PLAY</button>
+            <button id="btn-stop" class="btn-stop hidden">■ Stop</button>
+          </div>
+          <div class="status" id="play-status">Ready</div>
+          <div class="progress hidden" id="progress-wrap">
+            <div class="bar"><div class="fill" id="progress-fill"></div></div>
+            <div class="progress-text" id="progress-text"></div>
+          </div>
+        </div>
+      </div>
+      <div class="console-wrap">
+        <div class="console-header">
+          <span>Console</span>
+          <button id="btn-clear-console" class="mini">Clear</button>
+        </div>
+        <pre class="console" id="console"></pre>
+      </div>
+    </section>
+
+    <!-- PROFILES -->
+    <section class="tab" id="tab-profiles">
+      <h2>Profiles</h2>
+      <p class="muted">Add your in-game username. The launcher uses offline UUID — works without Microsoft account.</p>
+      <div class="profile-form">
+        <input type="text" id="new-profile-name" placeholder="Username (3-16 chars, no spaces)" maxlength="16">
+        <button id="btn-add-profile">Add Profile</button>
+      </div>
+      <ul class="profile-list" id="profile-list"></ul>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="tab" id="tab-settings">
+      <h2>Settings</h2>
+      <div class="setting">
+        <label>Maximum RAM (GB)</label>
+        <input type="range" id="ram-max" min="2" max="16" step="1">
+        <span id="ram-max-val">6</span> GB
+      </div>
+      <div class="setting">
+        <label>Minimum RAM (GB)</label>
+        <input type="range" id="ram-min" min="1" max="8" step="1">
+        <span id="ram-min-val">2</span> GB
+      </div>
+      <div class="setting">
+        <label>Server Address</label>
+        <input type="text" id="server-address" placeholder="ip:port">
+      </div>
+      <div class="setting">
+        <label>Manifest URL</label>
+        <input type="text" id="manifest-url" placeholder="https://.../manifest.json">
+      </div>
+      <div class="setting buttons">
+        <button id="btn-open-game">Open Game Folder</button>
+        <button id="btn-open-launcher">Open Launcher Folder</button>
+        <button id="btn-check-manifest">Check Update</button>
+      </div>
+      <div class="setting">
+        <label>Update Status</label>
+        <div id="updater-status" class="muted">Idle</div>
+      </div>
+    </section>
+
+    <!-- NEWS -->
+    <section class="tab" id="tab-news">
+      <h2>News</h2>
+      <div id="news-content" class="muted">Loading...</div>
+    </section>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

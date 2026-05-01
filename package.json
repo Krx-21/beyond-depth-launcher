@@ -1,0 +1,60 @@
+{
+  "name": "beyond-depth-launcher",
+  "version": "0.1.0",
+  "description": "Beyond Depth — Minecraft modpack launcher (offline, auto-update, Forge 1.20.1)",
+  "main": "src/main/index.js",
+  "author": "Beyond Depth",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --win --x64",
+    "build:dir": "electron-builder --win --x64 --dir",
+    "manifest": "node tools/generate-manifest.js",
+    "publish": "electron-builder --win --x64 -p always"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "electron-store": "8.2.0",
+    "electron-updater": "^6.3.9",
+    "extract-zip": "^2.0.1",
+    "minecraft-launcher-core": "^3.18.2",
+    "uuid": "^11.0.5"
+  },
+  "devDependencies": {
+    "electron": "^33.3.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.beyonddepth.launcher",
+    "productName": "Beyond Depth Launcher",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Beyond Depth"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Krx-21",
+        "repo": "beyond-depth-launcher"
+      }
+    ]
+  }
+}
