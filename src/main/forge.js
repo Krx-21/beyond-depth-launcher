@@ -16,21 +16,22 @@ function runJava(javaPath, args, cwd, onLog) {
 
 async function ensureForge({ forgeDir, manifest, javaPath, gameDir, onLog }) {
   const fi = manifest.forgeInstaller;
-  if (!fi) throw new Error('manifest.forgeInstaller missing');
+  const forgeVerName = `${manifest.minecraft}-forge-${manifest.forge}`;
+  const versionsDir = path.join(gameDir, 'versions', forgeVerName);
+  const alreadyInstalled = fs.existsSync(path.join(versionsDir, `${forgeVerName}.json`));
+
+  if (alreadyInstalled) {
+    onLog?.(`Forge ${manifest.forge} already installed.`);
+    return null;
+  }
+
+  if (!fi) throw new Error('manifest.forgeInstaller missing (and Forge is not installed yet)');
 
   const installerPath = path.join(forgeDir, `forge-${manifest.minecraft}-${manifest.forge}-installer.jar`);
   const need = !fs.existsSync(installerPath) || (await sha1File(installerPath)) !== fi.sha1;
   if (need) {
     onLog?.(`Downloading Forge installer...`);
     await downloadFile(fi.url, installerPath);
-  }
-
-  // Check if forge version is already installed in gameDir/versions
-  const forgeVerName = `${manifest.minecraft}-forge-${manifest.forge}`;
-  const versionsDir = path.join(gameDir, 'versions', forgeVerName);
-  if (fs.existsSync(path.join(versionsDir, `${forgeVerName}.json`))) {
-    onLog?.(`Forge ${manifest.forge} already installed.`);
-    return installerPath;
   }
 
   onLog?.(`Installing Forge ${manifest.forge} (this takes a while)...`);
