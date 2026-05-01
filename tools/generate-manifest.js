@@ -13,6 +13,11 @@ const path = require('path');
 const crypto = require('crypto');
 const AdmZip = require('adm-zip');
 
+function sanitizeAssetName(n) {
+  // GitHub releases replace any non [A-Za-z0-9._+-] with '.' and collapse consecutive dots.
+  return n.replace(/[^A-Za-z0-9._+-]/g, '.').replace(/\.+/g, '.');
+}
+
 function arg(name, def = null) {
   const i = process.argv.indexOf('--' + name);
   return i === -1 ? def : process.argv[i + 1];
@@ -80,7 +85,7 @@ function main() {
       if (!fs.statSync(full).isFile()) continue;
       if (!/\.(jar|disabled)$/i.test(f)) continue;
       const hash = sha1File(full);
-      const enc = encodeURIComponent(f);
+      const enc = encodeURIComponent(sanitizeAssetName(f));
       mods.push({
         path: 'mods/' + f,
         url: `${baseUrl}/${enc}`,
