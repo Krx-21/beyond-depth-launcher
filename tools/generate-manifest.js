@@ -63,11 +63,19 @@ function main() {
   fs.mkdirSync(path.join(distDir, 'mods'), { recursive: true });
 
   // ---- MODS (individual) ----
-  const modsSrc = path.join(serverDir, 'mods');
+  // Server mods first, then overlay client-only mods (rendering, etc.) by filename.
+  const clientDir = arg('client', null);
+  const modSources = [path.join(serverDir, 'mods')];
+  if (clientDir && fs.existsSync(path.join(clientDir, 'mods'))) {
+    modSources.push(path.join(clientDir, 'mods'));
+  }
   const mods = [];
-  const modUploads = [];  // files to upload (we just reference originals)
-  if (fs.existsSync(modsSrc)) {
+  const seen = new Set();
+  const modUploads = [];
+  for (const modsSrc of modSources) {
+    if (!fs.existsSync(modsSrc)) continue;
     for (const f of fs.readdirSync(modsSrc)) {
+      if (seen.has(f.toLowerCase())) continue;
       const full = path.join(modsSrc, f);
       if (!fs.statSync(full).isFile()) continue;
       if (!/\.(jar|disabled)$/i.test(f)) continue;
@@ -80,9 +88,10 @@ function main() {
         size: fs.statSync(full).size
       });
       modUploads.push(full);
+      seen.add(f.toLowerCase());
     }
   }
-  console.log(`Mods: ${mods.length}`);
+  console.log(`Mods: ${mods.length} (sources: ${modSources.length})`);
 
   // ---- BUNDLES (zip whole dir) ----
   const bundleDirs = ['config', 'kubejs', 'defaultconfigs', 'resourcepacks', 'shaderpacks'];
