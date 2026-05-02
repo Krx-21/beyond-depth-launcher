@@ -78,30 +78,18 @@ function launchGame({ authorization, gameDir, javaPath, manifest, ramMin, ramMax
     const { args: forgeJvmArgs, modulePathJars } = buildForgeJvmArgs(gameDir, forgeVerName);
     onLog?.(`[Launcher] Forge JVM args: ${forgeJvmArgs.length} (module-path jars: ${modulePathJars.length})`);
 
-    // Aikar's G1GC flags — same as the server's user_jvm_args.txt.
-    // Critical for modded Minecraft: prevents GC-pause crashes when entering
-    // new dimensions (Nether, Underground, etc.) that load many chunks at once.
+    // ZGC Generational (Java 21+) — faster startup and lower pause times than G1GC.
+    // Avoids the long GC pauses G1GC causes during initial mod/resource loading.
+    // -XX:+AlwaysPreTouch: commits all RAM pages upfront to prevent stutter later.
+    // -XX:+DisableExplicitGC: prevents mods from triggering full GC via System.gc().
     const gcFlags = [
-      '-XX:+UseG1GC',
-      '-XX:+ParallelRefProcEnabled',
-      '-XX:MaxGCPauseMillis=200',
       '-XX:+UnlockExperimentalVMOptions',
-      '-XX:+DisableExplicitGC',
+      '-XX:+UseZGC',
+      '-XX:+ZGenerational',
       '-XX:+AlwaysPreTouch',
-      '-XX:G1NewSizePercent=30',
-      '-XX:G1MaxNewSizePercent=40',
-      '-XX:G1HeapRegionSize=8M',
-      '-XX:G1ReservePercent=20',
-      '-XX:G1HeapWastePercent=5',
-      '-XX:G1MixedGCCountTarget=4',
-      '-XX:InitiatingHeapOccupancyPercent=15',
-      '-XX:G1MixedGCLiveThresholdPercent=90',
-      '-XX:G1RSetUpdatingPauseTimePercent=5',
-      '-XX:SurvivorRatio=32',
+      '-XX:+DisableExplicitGC',
       '-XX:+PerfDisableSharedMem',
-      '-XX:MaxTenuringThreshold=1',
-      '-Dusing.aikars.flags=https://mcflags.emc.gs',
-      '-Daikars.new.flags=true'
+      '-XX:+UseStringDeduplication',
     ];
 
     const opts = {

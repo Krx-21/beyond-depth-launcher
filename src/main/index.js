@@ -28,6 +28,14 @@ const store = new Store({
   }
 }
 
+// Migration: replace old hardcoded IP with dynamic DNS
+{
+  const addr = store.get('serverAddress') || '';
+  if (addr === '58.136.198.119:25565' || addr === '58.136.198.119') {
+    store.set('serverAddress', 'biogji.serveminecraft.net:25565');
+  }
+}
+
 const isDev = process.argv.includes('--dev');
 let mainWindow;
 
