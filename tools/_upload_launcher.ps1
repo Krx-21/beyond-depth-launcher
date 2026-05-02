@@ -1,4 +1,4 @@
-param([string]$Token = $env:GH_TOKEN, [string]$Tag = 'v0.1.7')
+param([string]$Token = $env:GH_TOKEN, [string]$Tag = 'v0.1.10')
 $ErrorActionPreference = 'Stop'
 $h = @{ Authorization="Bearer $Token"; 'User-Agent'='x'; Accept='application/vnd.github+json' }
 $rel = (Invoke-RestMethod "https://api.github.com/repos/Krx-21/beyond-depth-launcher/releases?per_page=10" -Headers $h) | Where-Object { $_.tag_name -eq $Tag }
@@ -9,8 +9,8 @@ foreach ($a in $rel.assets) { $existing[$a.name] = $a.id }
 Write-Host "Release id=$($rel.id) existing assets=$($existing.Count)"
 
 $files = @(
-  'C:\Users\godof\Documents\Beyond Depth Launcher\dist\Beyond Depth Launcher Setup 0.1.7.exe',
-  'C:\Users\godof\Documents\Beyond Depth Launcher\dist\Beyond Depth Launcher Setup 0.1.7.exe.blockmap',
+  'C:\Users\godof\Documents\Beyond Depth Launcher\dist\Beyond Depth Launcher Setup 0.1.10.exe',
+  'C:\Users\godof\Documents\Beyond Depth Launcher\dist\Beyond Depth Launcher Setup 0.1.10.exe.blockmap',
   'C:\Users\godof\Documents\Beyond Depth Launcher\dist\latest.yml'
 )
 

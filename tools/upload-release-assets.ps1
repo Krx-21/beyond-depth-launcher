@@ -1,7 +1,7 @@
 param(
   [string]$Owner = 'Krx-21',
   [string]$Repo  = 'beyond-depth-launcher',
-  [string]$Tag   = 'v0.1.7',
+  [string]$Tag   = 'v0.1.9',
   [string]$ListFile = 'C:\Users\godof\Documents\Beyond Depth Launcher\dist\upload-list.txt',
   [string]$Token = $env:GH_TOKEN
 )

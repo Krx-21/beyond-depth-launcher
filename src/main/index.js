@@ -13,7 +13,7 @@ const store = new Store({
     activeProfile: null,
     ramMaxGB: 6,
     ramMinGB: 2,
-    serverAddress: '58.136.198.119:25565',
+    serverAddress: 'biogji.serveminecraft.net:25565',
     manifestUrl: CORRECT_MANIFEST_URL,
     javaPath: null,
     gameDir: null
@@ -51,13 +51,20 @@ function createWindow() {
     frame: false,
     backgroundColor: '#1e1e2e',
     icon: path.join(__dirname, '../../assets/icon.png'),
+    show: false,  // show after ready-to-show to prevent white flash
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      devTools: isDev,  // disable DevTools entirely in production
+      backgroundThrottling: false  // prevent UI freezing when window is unfocused (during game)
     }
   });
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+
+  // Show window only once content is ready — no white/blank flash on startup
+  mainWindow.once('ready-to-show', () => mainWindow.show());
+
   if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

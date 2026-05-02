@@ -4,6 +4,20 @@ const path = require('path');
 const { Client } = require('minecraft-launcher-core');
 const Handler = require('minecraft-launcher-core/components/handler');
 
+// Patch child_process.spawn so every java invocation (MCLC, Forge installer, etc.)
+// runs with windowsHide: true on Windows — prevents a black console/CMD window
+// from appearing when the game or Forge installer starts.
+if (process.platform === 'win32') {
+  const cp = require('child_process');
+  if (!cp._windowsHide_patched) {
+    const origSpawn = cp.spawn;
+    cp.spawn = function (command, args, options) {
+      return origSpawn.call(this, command, args ?? [], { ...(options ?? {}), windowsHide: true });
+    };
+    cp._windowsHide_patched = true;
+  }
+}
+
 // One-time monkey patch: filter module-path jars out of MCLC's classpath.
 // MCLC 3.18 doesn't honour the `arguments.jvm` block from custom Forge JSON
 // (which is required for Forge 1.17+ on Java 17+). We inject those args
@@ -64,6 +78,32 @@ function launchGame({ authorization, gameDir, javaPath, manifest, ramMin, ramMax
     const { args: forgeJvmArgs, modulePathJars } = buildForgeJvmArgs(gameDir, forgeVerName);
     onLog?.(`[Launcher] Forge JVM args: ${forgeJvmArgs.length} (module-path jars: ${modulePathJars.length})`);
 
+    // Aikar's G1GC flags — same as the server's user_jvm_args.txt.
+    // Critical for modded Minecraft: prevents GC-pause crashes when entering
+    // new dimensions (Nether, Underground, etc.) that load many chunks at once.
+    const gcFlags = [
+      '-XX:+UseG1GC',
+      '-XX:+ParallelRefProcEnabled',
+      '-XX:MaxGCPauseMillis=200',
+      '-XX:+UnlockExperimentalVMOptions',
+      '-XX:+DisableExplicitGC',
+      '-XX:+AlwaysPreTouch',
+      '-XX:G1NewSizePercent=30',
+      '-XX:G1MaxNewSizePercent=40',
+      '-XX:G1HeapRegionSize=8M',
+      '-XX:G1ReservePercent=20',
+      '-XX:G1HeapWastePercent=5',
+      '-XX:G1MixedGCCountTarget=4',
+      '-XX:InitiatingHeapOccupancyPercent=15',
+      '-XX:G1MixedGCLiveThresholdPercent=90',
+      '-XX:G1RSetUpdatingPauseTimePercent=5',
+      '-XX:SurvivorRatio=32',
+      '-XX:+PerfDisableSharedMem',
+      '-XX:MaxTenuringThreshold=1',
+      '-Dusing.aikars.flags=https://mcflags.emc.gs',
+      '-Daikars.new.flags=true'
+    ];
+
     const opts = {
       authorization,
       root: gameDir,
@@ -75,7 +115,7 @@ function launchGame({ authorization, gameDir, javaPath, manifest, ramMin, ramMax
       },
       memory: { max: `${ramMax}G`, min: `${ramMin}G` },
       window: { width: 1280, height: 720 },
-      customArgs: forgeJvmArgs,
+      customArgs: [...gcFlags, ...forgeJvmArgs],
       // Read by our monkey-patched Handler.prototype.cleanUp
       _modulePathJarPaths: modulePathJars
     };

@@ -1,4 +1,4 @@
-param([string]$Tag = 'v0.1.7')
+param([string]$Tag = 'v0.1.10')
 $ErrorActionPreference = 'Stop'
 $h = @{ Authorization = "Bearer $env:GH_TOKEN"; 'User-Agent' = 'x'; Accept = 'application/vnd.github+json' }
 $rels = Invoke-RestMethod 'https://api.github.com/repos/Krx-21/beyond-depth-launcher/releases?per_page=5' -Headers $h
