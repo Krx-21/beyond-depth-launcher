@@ -137,6 +137,24 @@ function main() {
     forgeUploads.push(forgeInstaller);
   }
 
+  // ---- AUTO-DETECT REMOVED MODS ----
+  // Compare against a previous manifest to find mods that no longer exist.
+  const prevManifestArg = arg('prev-manifest', null);
+  const removed = [];
+  if (prevManifestArg && fs.existsSync(prevManifestArg)) {
+    const prev = JSON.parse(fs.readFileSync(prevManifestArg, 'utf8'));
+    const newPaths = new Set(mods.map(m => m.path.toLowerCase()));
+    for (const oldMod of (prev.mods || prev.files || [])) {
+      if (!newPaths.has(oldMod.path.toLowerCase())) {
+        removed.push(oldMod.path);
+        console.log(`Removed (auto-detected): ${oldMod.path}`);
+      }
+    }
+    console.log(`Removed: ${removed.length} mod(s) detected`);
+  } else if (!prevManifestArg) {
+    console.log('Tip: pass --prev-manifest <path> to auto-detect removed mods.');
+  }
+
   const manifest = {
     version,
     minecraft: mc,
@@ -145,7 +163,7 @@ function main() {
     forgeInstaller: forgeInstallerEntry,
     mods,
     bundles,
-    removed: []
+    removed
   };
 
   fs.writeFileSync(outFile, JSON.stringify(manifest, null, 2));
