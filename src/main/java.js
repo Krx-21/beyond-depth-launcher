@@ -23,7 +23,18 @@ async function getJavaMajor(javaExe) {
   return major;
 }
 
-async function ensureJava({ javaDir, requiredMajor = 21, onLog }) {
+async function ensureJava({ javaDir, requiredMajor = 21, cachedJavaPath = null, onLog }) {
+  // Fast-path: if a previously verified java.exe still exists, trust it.
+  // Saves ~500-1000ms by skipping the `java -version` probe each launch.
+  if (cachedJavaPath && cachedJavaPath !== 'java') {
+    try {
+      if (fs.existsSync(cachedJavaPath) && fs.statSync(cachedJavaPath).isFile()) {
+        onLog?.(`Java (cached): ${cachedJavaPath}`);
+        return cachedJavaPath;
+      }
+    } catch {}
+  }
+
   // Try bundled in javaDir/jdk-XX/bin/java.exe
   const localCandidates = fs.existsSync(javaDir)
     ? fs.readdirSync(javaDir)

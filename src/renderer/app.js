@@ -2,12 +2,68 @@
 const $ = (sel) => document.querySelector(sel);
 const consoleEl = $('#console');
 
-function log(msg) {
-  consoleEl.textContent += msg + '\n';
-  if (consoleEl.textContent.length > 200000) {
-    consoleEl.textContent = consoleEl.textContent.slice(-100000);
+// Batched log writer: avoids O(n²) reflow from `textContent +=` per line
+// during heavy mclc/jvm output. Lines are queued and flushed on the next
+// animation frame in a single DOM mutation.
+const _logBuf = [];
+let _logScheduled = false;
+let _logSize = 0;
+function flushLogs() {
+  _logScheduled = false;
+  if (!_logBuf.length) return;
+  const chunk = _logBuf.join('\n') + '\n';
+  _logBuf.length = 0;
+  // Append via a text node — much faster than reading+writing textContent.
+  consoleEl.appendChild(document.createTextNode(chunk));
+  _logSize += chunk.length;
+  if (_logSize > 200000) {
+    // Trim from the front in one pass.
+    const txt = consoleEl.textContent;
+    consoleEl.textContent = txt.slice(-100000);
+    _logSize = consoleEl.textContent.length;
   }
   consoleEl.scrollTop = consoleEl.scrollHeight;
+}
+function log(msg) {
+  _logBuf.push(msg);
+  if (!_logScheduled) {
+    _logScheduled = true;
+    requestAnimationFrame(flushLogs);
+  }
+}
+
+// ── Toast notification system ──────────────────────────────────
+const _toastIcons = { success: '✓', error: '✕', warn: '⚠', info: 'ℹ' };
+function toast(msg, type = 'info', duration = 4500) {
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.innerHTML = `<span class="toast-icon">${_toastIcons[type] || 'ℹ'}</span><span class="toast-msg">${escapeHtml(String(msg))}</span>`;
+  container.appendChild(el);
+  const dismiss = () => {
+    el.classList.add('toast-exit');
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+  };
+  const timer = setTimeout(dismiss, duration);
+  el.onclick = () => { clearTimeout(timer); dismiss(); };
+}
+
+// ── Console drawer ───────────────────────────────────────────────
+const consoleDrawer = document.getElementById('console-drawer');
+document.getElementById('console-toggle').onclick = () => {
+  consoleDrawer.classList.toggle('open');
+};
+function openConsoleDrawer() { consoleDrawer.classList.add('open'); }
+
+// ── Status dot helper ────────────────────────────────────────────
+function setStatus(text, state = 'ready') {
+  const statusEl = $('#play-status');
+  if (statusEl) statusEl.textContent = text;
+  const dot = $('#status-dot');
+  if (!dot) return;
+  dot.className = 'status-dot';
+  if (state === 'busy') dot.classList.add('busy');
+  else if (state === 'error') dot.classList.add('error');
 }
 
 // Window controls
@@ -52,7 +108,7 @@ function renderProfiles() {
         <div class="puuid">${offlineUuidPreview(p.name)}</div>
       </div>
       <button class="skin-btn">Skin</button>
-      <button class="active-btn">${activeProfile === p.name ? '★ Active' : 'Set Active'}</button>
+      <button class="active-btn ${activeProfile === p.name ? 'is-active' : ''}">${activeProfile === p.name ? '★ Active' : 'Set Active'}</button>
       <button class="del">Delete</button>
     `;
     li.querySelector('.skin-btn').onclick = async () => {
@@ -103,11 +159,11 @@ $('#btn-add-profile').onclick = async () => {
   const inp = $('#new-profile-name');
   const name = inp.value.trim();
   if (!/^[A-Za-z0-9_]{3,16}$/.test(name)) {
-    alert('Username must be 3-16 chars (A-Z, 0-9, _)');
+    toast('Username must be 3–16 chars (A–Z, 0–9, _)', 'warn');
     return;
   }
   if (profiles.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-    alert('Profile already exists.');
+    toast('Profile already exists.', 'warn');
     return;
   }
   profiles.push({ name, skinPath: null });
@@ -147,28 +203,58 @@ $('#btn-check-manifest').onclick = async () => {
   $('#updater-status').textContent = 'Checking...';
   try {
     const m = await api.checkManifest();
-    $('#updater-status').textContent = `Manifest v${m.version}, ${m._pending || 0} files to update.`;
+    const msg = `Manifest v${m.version}, ${m._pending || 0} files to update.`;
+    $('#updater-status').textContent = msg;
+    toast(msg, 'info');
   } catch (e) {
-    $('#updater-status').textContent = `Error: ${e.message || e}`;
+    const err = `Check failed: ${e.message || e}`;
+    $('#updater-status').textContent = err;
+    toast(err, 'error');
   }
 };
 
 // Console events
 api.on('sync:log',     (msg) => log(`[sync] ${msg}`));
 api.on('launch:log',   (msg) => log(msg));
-api.on('sync:progress',(p) => {
+// Throttle progress UI to one DOM update per animation frame.
+let _pendingProgress = null;
+let _progressScheduled = false;
+function flushProgress() {
+  _progressScheduled = false;
+  const p = _pendingProgress; _pendingProgress = null;
+  if (!p) return;
   const wrap = $('#progress-wrap');
   wrap.classList.remove('hidden');
   const pct = p.total ? Math.round((p.index / p.total) * 100) : 0;
   $('#progress-fill').style.width = pct + '%';
   $('#progress-text').textContent = `${p.index}/${p.total} — ${p.file}`;
+}
+api.on('sync:progress',(p) => {
+  _pendingProgress = p;
+  if (!_progressScheduled) {
+    _progressScheduled = true;
+    requestAnimationFrame(flushProgress);
+  }
 });
 api.on('launch:close', (code) => {
   log(`[Launcher] Game exited (code ${code})`);
   $('#btn-play').classList.remove('hidden');
   $('#btn-stop').classList.add('hidden');
-  $('#play-status').textContent = 'Ready';
+  setStatus('Ready', 'ready');
   $('#progress-wrap').classList.add('hidden');
+});
+api.on('launch:crash', ({ code }) => {
+  log(`[Launcher] *** CRASH (exit code ${code}) — check console for details ***`);
+  // Switch to play tab.
+  document.querySelectorAll('.nav').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelector('.nav[data-tab="play"]').classList.add('active');
+  $('#tab-play').classList.add('active');
+  // Open the console drawer and scroll to crash line.
+  openConsoleDrawer();
+  flushLogs();
+  consoleEl.scrollTop = consoleEl.scrollHeight;
+  toast(`Game crashed (exit ${code}) — see console`, 'error', 7000);
 });
 api.on('updater', (s) => {
   if (!s) return;
@@ -187,30 +273,54 @@ api.on('updater', (s) => {
 // Play
 $('#btn-play').onclick = async () => {
   const profileName = $('#profile-select').value;
-  if (!profileName) { alert('Add a profile first (Profiles tab).'); return; }
+  if (!profileName) { toast('Add a profile first (Profiles tab)', 'warn'); return; }
   $('#btn-play').classList.add('hidden');
   $('#btn-stop').classList.remove('hidden');
-  $('#play-status').textContent = 'Launching...';
+  setStatus('Launching…', 'busy');
+  openConsoleDrawer();
   $('#progress-wrap').classList.remove('hidden');
   log('================ Launch start ================');
-  const r = await api.launch({
-    profileName,
-    directConnect: $('#direct-connect').checked
-  });
-  if (!r.ok) {
-    alert('Launch failed:\n' + r.error);
+  try {
+    const r = await api.launch({
+      profileName,
+      directConnect: $('#direct-connect').checked
+    });
+    if (!r.ok) {
+      toast('Launch failed: ' + r.error, 'error', 8000);
+      $('#btn-play').classList.remove('hidden');
+      $('#btn-stop').classList.add('hidden');
+      setStatus('Error', 'error');
+      $('#progress-wrap').classList.add('hidden');
+    } else {
+      setStatus('Running', 'busy');
+    }
+  } catch (e) {
+    // Unexpected IPC error — always restore the button so the user can retry.
+    log(`[Launcher] Unexpected error: ${e.message || e}`);
+    toast(`Unexpected error: ${e.message || e}`, 'error');
     $('#btn-play').classList.remove('hidden');
     $('#btn-stop').classList.add('hidden');
-    $('#play-status').textContent = 'Error';
+    setStatus('Error', 'error');
     $('#progress-wrap').classList.add('hidden');
-  } else {
-    $('#play-status').textContent = 'Running';
   }
 };
 $('#btn-stop').onclick = async () => {
-  if (confirm('Force-close Minecraft?')) api.stopGame();
+  if (confirm('Force-close Minecraft?')) {
+    api.stopGame();
+    setStatus('Stopped', 'ready');
+  }
 };
-$('#btn-clear-console').onclick = () => { consoleEl.textContent = ''; };
+$('#btn-clear-console').onclick = (e) => {
+  e.stopPropagation(); // prevent bubbling to console-toggle div
+  consoleEl.textContent = '';
+  _logSize = 0;
+};
+
+// News link delegation — route <a> clicks to shell.openExternal
+document.getElementById('news-content').addEventListener('click', (e) => {
+  const a = e.target.closest('a[href]');
+  if (a) { e.preventDefault(); api.openExternal(a.href); }
+});
 
 // News (cached per session to avoid refetching on every tab click)
 let _newsHtmlCache = null;
@@ -252,4 +362,9 @@ function offlineUuidPreview(name) {
 (async () => {
   await loadSettings();
   await loadProfiles();
+  // Show real version from package.json via main process
+  try {
+    const ver = await api.getVersion();
+    if (ver) $('#app-version').textContent = 'v' + ver;
+  } catch {}
 })();

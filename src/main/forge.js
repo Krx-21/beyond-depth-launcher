@@ -4,6 +4,8 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { downloadFile, sha1File } = require('./manifest');
 
+const FORGE_INSTALL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
 function runJava(javaPath, args, cwd, onLog) {
   return new Promise((resolve, reject) => {
     const p = execFile(javaPath, args, { cwd, windowsHide: true, maxBuffer: 50 * 1024 * 1024 });
@@ -11,11 +13,17 @@ function runJava(javaPath, args, cwd, onLog) {
     p.stderr?.on('data', d => onLog?.(String(d).trimEnd()));
     p.on('exit', code => code === 0 ? resolve() : reject(new Error(`Forge installer exit ${code}`)));
     p.on('error', reject);
+    const timer = setTimeout(() => {
+      p.kill();
+      reject(new Error('Forge installer timed out after 10 minutes'));
+    }, FORGE_INSTALL_TIMEOUT_MS);
+    p.on('exit', () => clearTimeout(timer));
+    p.on('error', () => clearTimeout(timer));
   });
 }
 
 async function ensureForge({ forgeDir, manifest, javaPath, gameDir, onLog }) {
-  const fi = manifest.forgeInstaller;
+  let fi = manifest.forgeInstaller;
   const forgeVerName = `${manifest.minecraft}-forge-${manifest.forge}`;
   const versionsDir = path.join(gameDir, 'versions', forgeVerName);
   const alreadyInstalled = fs.existsSync(path.join(versionsDir, `${forgeVerName}.json`));
@@ -25,10 +33,21 @@ async function ensureForge({ forgeDir, manifest, javaPath, gameDir, onLog }) {
     return null;
   }
 
-  if (!fi) throw new Error('manifest.forgeInstaller missing (and Forge is not installed yet)');
+  // Fall back to official Forge Maven if forgeInstaller is missing from manifest
+  if (!fi) {
+    const mc = manifest.minecraft;
+    const fv = manifest.forge;
+    fi = {
+      url: `https://maven.minecraftforge.net/net/minecraftforge/forge/${mc}-${fv}/forge-${mc}-${fv}-installer.jar`,
+      sha1: null,
+      size: null
+    };
+    onLog?.(`[Forge] No forgeInstaller in manifest — falling back to Forge Maven: ${fi.url}`);
+  }
 
   const installerPath = path.join(forgeDir, `forge-${manifest.minecraft}-${manifest.forge}-installer.jar`);
-  const need = !fs.existsSync(installerPath) || (await sha1File(installerPath)) !== fi.sha1;
+  const localSha1 = await sha1File(installerPath);
+  const need = !fs.existsSync(installerPath) || (fi.sha1 !== null && localSha1 !== fi.sha1);
   if (need) {
     onLog?.(`Downloading Forge installer...`);
     await downloadFile(fi.url, installerPath);

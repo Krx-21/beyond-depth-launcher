@@ -29,9 +29,12 @@ contextBridge.exposeInMainWorld('api', {
   // Updater
   installUpdate: () => ipcRenderer.invoke('updater:install'),
 
+  // App info
+  getVersion: () => ipcRenderer.invoke('app:version'),
+
   // Events
   on: (channel, cb) => {
-    const allowed = ['sync:progress','sync:log','launch:log','launch:close','updater'];
+    const allowed = ['sync:progress','sync:log','launch:log','launch:close','launch:crash','updater'];
     if (!allowed.includes(channel)) return;
     const listener = (_, data) => cb(data);
     ipcRenderer.on(channel, listener);

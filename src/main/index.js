@@ -3,6 +3,7 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
+const os = require('os');
 
 const Store = require('electron-store');
 const CORRECT_MANIFEST_URL = 'https://github.com/Krx-21/beyond-depth-launcher/releases/latest/download/manifest.json';
@@ -60,7 +61,11 @@ function createWindow() {
   if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    // Only allow safe URL schemes — prevents javascript: / file: injection.
+    try {
+      const { protocol } = new URL(url);
+      if (protocol === 'https:' || protocol === 'http:') shell.openExternal(url);
+    } catch {}
     return { action: 'deny' };
   });
 }
@@ -85,12 +90,29 @@ function sendStatus(channel, payload) {
 }
 
 // ---- IPC ----
-ipcMain.handle('store:get', (_, key) => store.get(key));
-ipcMain.handle('store:set', (_, key, value) => store.set(key, value));
+// Allowlist: only keys the renderer legitimately needs to read/write.
+// Prevents a compromised renderer from changing manifestUrl or javaPath to a malicious value.
+const STORE_READABLE = new Set(['profiles','activeProfile','ramMaxGB','ramMinGB','serverAddress','javaPath','gameDir']);
+const STORE_WRITABLE = new Set(['profiles','activeProfile','ramMaxGB','ramMinGB','serverAddress']);
+ipcMain.handle('store:get', (_, key) => {
+  if (!STORE_READABLE.has(key)) return undefined;
+  return store.get(key);
+});
+ipcMain.handle('store:set', (_, key, value) => {
+  if (!STORE_WRITABLE.has(key)) return false;
+  store.set(key, value);
+  return true;
+});
+ipcMain.handle('app:version', () => app.getVersion());
 
 ipcMain.on('window:minimize', () => mainWindow.minimize());
 ipcMain.on('window:close',    () => mainWindow.close());
-ipcMain.on('window:openExternal', (_, url) => shell.openExternal(url));
+ipcMain.on('window:openExternal', (_, url) => {
+  try {
+    const { protocol } = new URL(url);
+    if (protocol === 'https:' || protocol === 'http:') shell.openExternal(url);
+  } catch {}
+});
 
 const { syncManifest } = require('./manifest');
 
@@ -159,6 +181,7 @@ ipcMain.handle('launch:start', async (_, opts) => {
     const javaPath = await ensureJava({
       javaDir: JAVA_DIR,
       requiredMajor: manifest.javaVersion || 21,
+      cachedJavaPath: store.get('javaPath'),
       onLog: (msg) => sendStatus('launch:log', msg)
     });
     store.set('javaPath', javaPath);
@@ -189,6 +212,13 @@ ipcMain.handle('launch:start', async (_, opts) => {
       meta: { type: 'mojang', demo: false }
     };
 
+    // RAM sanity check: warn if requested RAM > 80% of physical RAM.
+    const ramGB = store.get('ramMaxGB') || 6;
+    const physicalGB = os.totalmem() / (1024 ** 3);
+    if (ramGB > physicalGB * 0.8) {
+      sendStatus('launch:log', `[Launcher] WARNING: Requested ${ramGB} GB RAM but system only has ${physicalGB.toFixed(1)} GB — this may cause crashes.`);
+    }
+
     sendStatus('launch:log', '[Launcher] Launching Minecraft...');
     await launchGame({
       authorization: auth,
@@ -197,14 +227,22 @@ ipcMain.handle('launch:start', async (_, opts) => {
       forgeInstaller,
       manifest,
       // Force min == max (single RAM value)
-      ramMin: store.get('ramMaxGB') || 6,
-      ramMax: store.get('ramMaxGB') || 6,
+      ramMin: ramGB,
+      ramMax: ramGB,
       serverAddress: opts.directConnect ? store.get('serverAddress') : null,
       onLog: (msg) => sendStatus('launch:log', msg),
-      onClose: (code) => sendStatus('launch:close', code)
+      onClose: (code) => {
+        sendStatus('launch:close', code);
+        // Auto-show console when game crashes (non-zero exit).
+        if (code !== 0 && code !== null) {
+          sendStatus('launch:crash', { code });
+        }
+      }
     });
     return { ok: true };
   } catch (e) {
+    _manifestCache = null;
+    _manifestCacheTime = 0;
     sendStatus('launch:log', `[Launcher] ERROR: ${e.message || e}`);
     return { ok: false, error: String(e) };
   }

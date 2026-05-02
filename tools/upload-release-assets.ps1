@@ -30,7 +30,11 @@ $files = Get-Content $ListFile | Where-Object { $_ -and (Test-Path -LiteralPath 
 Write-Host "Uploading $($files.Count) files..."
 
 $i = 0; $skipped = 0; $uploaded = 0; $failed = 0
-function Get-SanitizedName([string]$n) { return ($n -replace '[^A-Za-z0-9._+-]', '.') }
+# Must match generate-manifest.js sanitizeAssetName():
+# GitHub replaces any non [A-Za-z0-9._+-] with '.' AND collapses consecutive dots.
+function Get-SanitizedName([string]$n) {
+  return (($n -replace '[^A-Za-z0-9._+-]', '.') -replace '\.+', '.')
+}
 foreach ($f in $files) {
   $i++
   $name = [System.IO.Path]::GetFileName($f)
@@ -41,7 +45,9 @@ foreach ($f in $files) {
     continue
   }
   $sz = (Get-Item -LiteralPath $f).Length
-  $url = "$uploadBase`?name=$([uri]::EscapeDataString($name))"
+  # Upload using the sanitized name so it matches what GitHub stores and what
+  # the manifest URL points to (avoids duplicate-name 422 on re-runs).
+  $url = "$uploadBase`?name=$([uri]::EscapeDataString($sanitized))"
   try {
     Write-Host ("[{0}/{1}] {2,-50} {3:N1} MB" -f $i, $files.Count, $name, ($sz/1MB))
     $h = @{
