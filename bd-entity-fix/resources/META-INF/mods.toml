@@ -1,0 +1,15 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+issueTrackerURL="https://github.com/Krx-21/beyond-depth-launcher/issues"
+
+[[mods]]
+modId="bdentityfix"
+version="1.0.0"
+displayName="BD Entity Render Fix"
+authors="Beyond Depth"
+description='''
+Adds null-check to EntityRenderDispatcher.shouldRender() to prevent NPE
+when an entity has no registered client-side renderer.
+Specifically fixes Undergarden dimension crash with Oculus shaders.
+'''
